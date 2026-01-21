@@ -10,9 +10,9 @@ from uuid import uuid4
 BANNED_WORDS = [
     "hate", "kill", "stupid", "idiot", "dumb", "fool", "moron",
     "loser", "bitch", "crap", "ass", "damn", "suck", "shut up",
-    "kill yourself", "die", "trash", "jerk", "ugly", "faggot", "slut", "whore",
-    "retard", "dick", "piss", "hell", "bastard"
-]
+    "kill yourself", "die", "trash", "jerk", "faggot", "slut", "whore",
+    "retard", "dick", "piss", "hell ", "bastard","Nigger"
+    [
 
 # -------------------------
 # DATABASE
