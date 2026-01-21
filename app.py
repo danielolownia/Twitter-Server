@@ -7,7 +7,7 @@ from uuid import uuid4
 # CONFIG
 # -------------------------
 <<<<<<< HEAD
-BANNED_WORDS = ["hate", "kill", "stupid", "Hell", "fuck", "FUCK", "HELL", "Loser" "loser", "idiot", "dunce", "Daniel", "Computer science", ".", " ", "I", "we", "me", "you", "run", "walk", "to", "if", "why","so","it"]
+BANNED_WORDS = ["hate", "kill", "stupid", "Hell", "fuck", "FUCK", "HELL", "Loser" "loser", "idiot", "dunce", "Daniel", "Computer science", ".", " ", "I", "we", "me", "you", "run", "walk", "to", "if", "why","so","it", "a", "oh", "type", "my", " ", "  ", "_", "-", "and"]
 
 
 # -------------------------
