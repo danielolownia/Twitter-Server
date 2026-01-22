@@ -16,7 +16,7 @@ BANNED_WORDS = [
 ]
 
 # -------------------------
-# DATABASE (persistent)
+# DATABASE
 # -------------------------
 DB_FILE = os.path.join(os.path.dirname(__file__), "mini_twitter.db")
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -61,17 +61,6 @@ CREATE TABLE IF NOT EXISTS follows (
 )
 """)
 
-c.execute("""
-CREATE TABLE IF NOT EXISTS notifications (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    type TEXT,
-    from_user TEXT,
-    tweet_id TEXT,
-    ts REAL
-)
-""")
-
 conn.commit()
 
 # -------------------------
@@ -81,8 +70,7 @@ def hash_pw(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def is_allowed(text):
-    text = text.lower()
-    return not any(word in text for word in BANNED_WORDS)
+    return not any(word in text.lower() for word in BANNED_WORDS)
 
 def get_username(uid):
     c.execute("SELECT username FROM users WHERE id=?", (uid,))
@@ -97,16 +85,18 @@ def follower_count(uid):
 # AUTH
 # -------------------------
 def register(email, username, password):
-    uid = str(uuid4())
+    if not username or not password:
+        return "Username and password required."
+
     try:
         c.execute(
             "INSERT INTO users VALUES (?, ?, ?, ?, ?)",
-            (uid, email, username, hash_pw(password), time.time())
+            (str(uuid4()), email, username, hash_pw(password), time.time())
         )
         conn.commit()
-        return "Account created."
+        return "Account created. Log in now."
     except sqlite3.IntegrityError:
-        return "Username taken."
+        return "Username already taken."
 
 def login(username, password):
     c.execute(
@@ -123,26 +113,16 @@ def logout():
     st.session_state.user_id = None
 
 # -------------------------
-# FOLLOW SYSTEM
+# FOLLOW
 # -------------------------
 def follow_user(uid, target_username):
     c.execute("SELECT id FROM users WHERE username=?", (target_username,))
     row = c.fetchone()
-    if not row:
-        return "User not found."
-
-    tid = row[0]
-    if uid == tid:
-        return "You can't follow yourself."
+    if not row or row[0] == uid:
+        return "Invalid user."
 
     try:
-        c.execute("INSERT INTO follows VALUES (?, ?)", (uid, tid))
-        conn.commit()
-
-        c.execute(
-            "INSERT INTO notifications VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid4()), tid, "follow", get_username(uid), None, time.time())
-        )
+        c.execute("INSERT INTO follows VALUES (?, ?)", (uid, row[0]))
         conn.commit()
     except sqlite3.IntegrityError:
         pass
@@ -152,12 +132,10 @@ def follow_user(uid, target_username):
 def unfollow_user(uid, target_username):
     c.execute("SELECT id FROM users WHERE username=?", (target_username,))
     row = c.fetchone()
-    if not row:
-        return "User not found."
-
-    c.execute("DELETE FROM follows WHERE follower_id=? AND following_id=?", (uid, row[0]))
-    conn.commit()
-    return f"Unfollowed {target_username}"
+    if row:
+        c.execute("DELETE FROM follows WHERE follower_id=? AND following_id=?", (uid, row[0]))
+        conn.commit()
+    return "Unfollowed"
 
 # -------------------------
 # TWEETS
@@ -168,20 +146,22 @@ def create_tweet(uid, text, image_url):
     if len(text) > 280:
         return "Tweet too long."
     if not is_allowed(text):
-        return "Tweet blocked by moderation."
+        return "Tweet blocked."
 
-    # Prevent duplicate posts
-    c.execute(
-        "SELECT 1 FROM tweets WHERE author_id=? AND content=?",
-        (uid, text)
-    )
-    if c.fetchone():
-        return "You already posted this."
+    # only block if LAST tweet is identical
+    c.execute("""
+        SELECT content FROM tweets
+        WHERE author_id=?
+        ORDER BY ts DESC
+        LIMIT 1
+    """, (uid,))
+    last = c.fetchone()
+    if last and last[0] == text:
+        return "You just posted this."
 
-    tid = str(uuid4())
     c.execute(
         "INSERT INTO tweets VALUES (?, ?, ?, ?, ?)",
-        (tid, uid, text, image_url, time.time())
+        (str(uuid4()), uid, text, image_url, time.time())
     )
     conn.commit()
     return "Tweet posted."
@@ -194,24 +174,15 @@ def like_tweet(uid, tid):
     try:
         c.execute("INSERT INTO likes VALUES (?, ?)", (tid, uid))
         conn.commit()
-
-        c.execute("SELECT author_id FROM tweets WHERE id=?", (tid,))
-        author = c.fetchone()[0]
-
-        c.execute(
-            "INSERT INTO notifications VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid4()), author, "like", get_username(uid), tid, time.time())
-        )
-        conn.commit()
     except sqlite3.IntegrityError:
         pass
 
 # -------------------------
-# GLOBAL FEED
+# FEED
 # -------------------------
 def home_feed():
     c.execute("""
-        SELECT t.id, t.author_id, t.content, t.image_url, t.ts,
+        SELECT t.id, t.author_id, t.content, t.image_url,
                (SELECT COUNT(*) FROM likes WHERE tweet_id=t.id)
         FROM tweets t
         ORDER BY t.ts DESC
@@ -219,44 +190,35 @@ def home_feed():
     return c.fetchall()
 
 # -------------------------
-# NOTIFICATIONS
-# -------------------------
-def get_notifications(uid):
-    c.execute("""
-        SELECT type, from_user
-        FROM notifications
-        WHERE user_id=?
-        ORDER BY ts DESC
-    """, (uid,))
-    return c.fetchall()
-
-# -------------------------
-# STREAMLIT STATE
+# SESSION
 # -------------------------
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
+if "tweet_text" not in st.session_state:
+    st.session_state.tweet_text = ""
 
 # -------------------------
 # UI
 # -------------------------
 st.title("🐦 Mini Twitter")
 
-menu = ["Register", "Login", "Feed", "Post Tweet", "Follow / Unfollow", "Notifications", "Logout"]
+menu = ["Register", "Login", "Feed", "Post Tweet", "Follow / Unfollow", "Logout"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 # REGISTER
 if choice == "Register":
+    email = st.text_input("Email")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
     if st.button("Register"):
-        st.success(register(
-            st.text_input("Email"),
-            st.text_input("Username"),
-            st.text_input("Password", type="password")
-        ))
+        st.success(register(email, username, password))
 
 # LOGIN
 elif choice == "Login":
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if login(st.text_input("Username"), st.text_input("Password", type="password")):
+        if login(username, password):
             st.success("Logged in!")
         else:
             st.error("Invalid login.")
@@ -266,46 +228,50 @@ elif choice == "Post Tweet":
     if not st.session_state.user_id:
         st.warning("Login first")
     else:
-        text = st.text_area("What's happening?")
+        st.session_state.tweet_text = st.text_area(
+            "What's happening?",
+            value=st.session_state.tweet_text
+        )
         image_url = st.text_input("Image URL (optional)")
+
         if st.button("Post"):
-            st.success(create_tweet(st.session_state.user_id, text, image_url))
-            st.rerun()
+            msg = create_tweet(st.session_state.user_id, st.session_state.tweet_text, image_url)
+            st.success(msg)
+            if msg == "Tweet posted.":
+                st.session_state.tweet_text = ""
+                st.rerun()
 
 # FEED
 elif choice == "Feed":
-    for tid, author_id, content, img, ts, likes in home_feed():
-        st.write(f"**{get_username(author_id)}** · {follower_count(author_id)} followers")
+    for tid, author, content, img, likes in home_feed():
+        st.write(f"**{get_username(author)}** · {follower_count(author)} followers")
         st.write(content)
         if img:
             st.image(img)
-        st.write(f"❤️ {likes}")
 
         col1, col2 = st.columns(2)
         if st.session_state.user_id:
             if col1.button("Like", key=f"like-{tid}"):
                 like_tweet(st.session_state.user_id, tid)
                 st.rerun()
-            if author_id == st.session_state.user_id:
+            if author == st.session_state.user_id:
                 if col2.button("Delete", key=f"del-{tid}"):
-                    delete_tweet(st.session_state.user_id, tid)
+                    delete_tweet(author, tid)
                     st.rerun()
 
         st.divider()
 
 # FOLLOW
 elif choice == "Follow / Unfollow":
-    target = st.text_input("Username")
-    col1, col2 = st.columns(2)
-    if col1.button("Follow"):
-        st.success(follow_user(st.session_state.user_id, target))
-    if col2.button("Unfollow"):
-        st.success(unfollow_user(st.session_state.user_id, target))
-
-# NOTIFICATIONS
-elif choice == "Notifications":
-    for t, f in get_notifications(st.session_state.user_id):
-        st.write(f"{f} {t}ed you")
+    if not st.session_state.user_id:
+        st.warning("Login first")
+    else:
+        target = st.text_input("Username")
+        col1, col2 = st.columns(2)
+        if col1.button("Follow"):
+            st.success(follow_user(st.session_state.user_id, target))
+        if col2.button("Unfollow"):
+            st.success(unfollow_user(st.session_state.user_id, target))
 
 # LOGOUT
 elif choice == "Logout":
