@@ -133,7 +133,10 @@ def unfollow_user(uid, target_username):
     c.execute("SELECT id FROM users WHERE username=?", (target_username,))
     row = c.fetchone()
     if row:
-        c.execute("DELETE FROM follows WHERE follower_id=? AND following_id=?", (uid, row[0]))
+        c.execute(
+            "DELETE FROM follows WHERE follower_id=? AND following_id=?",
+            (uid, row[0])
+        )
         conn.commit()
     return "Unfollowed"
 
@@ -148,7 +151,6 @@ def create_tweet(uid, text, image_url):
     if not is_allowed(text):
         return "Tweet blocked."
 
-    # only block if LAST tweet is identical
     c.execute("""
         SELECT content FROM tweets
         WHERE author_id=?
@@ -182,8 +184,12 @@ def like_tweet(uid, tid):
 # -------------------------
 def home_feed():
     c.execute("""
-        SELECT t.id, t.author_id, t.content, t.image_url,
-               (SELECT COUNT(*) FROM likes WHERE tweet_id=t.id)
+        SELECT
+            t.id,
+            t.author_id,
+            t.content,
+            t.image_url,
+            (SELECT COUNT(*) FROM likes WHERE tweet_id=t.id)
         FROM tweets t
         ORDER BY t.ts DESC
     """)
@@ -235,7 +241,11 @@ elif choice == "Post Tweet":
         image_url = st.text_input("Image URL (optional)")
 
         if st.button("Post"):
-            msg = create_tweet(st.session_state.user_id, st.session_state.tweet_text, image_url)
+            msg = create_tweet(
+                st.session_state.user_id,
+                st.session_state.tweet_text,
+                image_url
+            )
             st.success(msg)
             if msg == "Tweet posted.":
                 st.session_state.tweet_text = ""
@@ -246,6 +256,10 @@ elif choice == "Feed":
     for tid, author, content, img, likes in home_feed():
         st.write(f"**{get_username(author)}** · {follower_count(author)} followers")
         st.write(content)
+
+        # ✅ LIKE COUNT DISPLAY (THE FIX)
+        st.write(f"❤️ {likes} likes")
+
         if img:
             st.image(img)
 
