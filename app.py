@@ -222,7 +222,7 @@ if "tweet_text" not in st.session_state:
 # -------------------------
 # UI
 # -------------------------
-st.title("🐦 Mini Twitter")
+st.title("Mini Twitter")
 
 menu = ["Register", "Login", "Feed", "Post Tweet", "Follow / Unfollow", "Logout"]
 choice = st.sidebar.selectbox("Menu", menu)
