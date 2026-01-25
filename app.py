@@ -56,7 +56,6 @@ st.markdown(
         transform: scale(1.02);
     }
 
-    /* LIKE BUTTON */
     div.stButton > button[key^="like-"] {
         width: 48px !important;
         height: 48px !important;
@@ -85,12 +84,7 @@ st.markdown(
 # -------------------------
 # CONFIG
 # -------------------------
-BANNED_WORDS = [
-    "hate", "kill", "stupid", "idiot", "dumb", "moron", "loser",
-    "bitch", "slut", "whore", "retard", "faggot",
-    "kill yourself", "die", "trash", "jerk", "ugly",
-    "asshole", "bastard", "piss", "dick"
-]
+BANNED_WORDS = ["hate", "kill", "stupid"]
 
 # -------------------------
 # DATABASE
@@ -143,16 +137,12 @@ conn.commit()
 # -------------------------
 # HELPERS
 # -------------------------
-def hash_pw(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def is_allowed(text):
-    return not any(word in text.lower() for word in BANNED_WORDS)
+def hash_pw(p): return hashlib.sha256(p.encode()).hexdigest()
 
 def get_username(uid):
     c.execute("SELECT username FROM users WHERE id=?", (uid,))
-    row = c.fetchone()
-    return row[0] if row else "Unknown"
+    r = c.fetchone()
+    return r[0] if r else "Unknown"
 
 def follower_count(uid):
     c.execute("SELECT COUNT(*) FROM follows WHERE following_id=?", (uid,))
@@ -161,6 +151,34 @@ def follower_count(uid):
 def has_liked(uid, tid):
     c.execute("SELECT 1 FROM likes WHERE tweet_id=? AND user_id=?", (tid, uid))
     return c.fetchone() is not None
+
+# -------------------------
+# FOLLOW HELPERS (NEW)
+# -------------------------
+def follow_user(uid, target_username):
+    c.execute("SELECT id FROM users WHERE username=?", (target_username,))
+    row = c.fetchone()
+    if not row or row[0] == uid:
+        return "Invalid user."
+
+    try:
+        c.execute("INSERT INTO follows VALUES (?, ?)", (uid, row[0]))
+        conn.commit()
+        return f"You followed @{target_username}"
+    except sqlite3.IntegrityError:
+        return "Already following."
+
+def unfollow_user(uid, target_username):
+    c.execute("SELECT id FROM users WHERE username=?", (target_username,))
+    row = c.fetchone()
+    if row:
+        c.execute(
+            "DELETE FROM follows WHERE follower_id=? AND following_id=?",
+            (uid, row[0])
+        )
+        conn.commit()
+        return f"You unfollowed @{target_username}"
+    return "User not found."
 
 # -------------------------
 # AUTH
@@ -181,9 +199,9 @@ def login(username, password):
         "SELECT id FROM users WHERE username=? AND password=?",
         (username, hash_pw(password))
     )
-    row = c.fetchone()
-    if row:
-        st.session_state.user_id = row[0]
+    r = c.fetchone()
+    if r:
+        st.session_state.user_id = r[0]
         return True
     return False
 
@@ -193,12 +211,12 @@ def logout():
 # -------------------------
 # TWEETS
 # -------------------------
-def create_tweet(uid, text, image_url):
-    if not text or not is_allowed(text):
-        return "Tweet blocked."
+def create_tweet(uid, text, img):
+    if not text:
+        return "Tweet empty."
     c.execute(
         "INSERT INTO tweets VALUES (?, ?, ?, ?, ?)",
-        (str(uuid4()), uid, text, image_url, time.time())
+        (str(uuid4()), uid, text, img, time.time())
     )
     conn.commit()
     return "Tweet posted."
@@ -240,12 +258,23 @@ if "user_id" not in st.session_state:
 # -------------------------
 st.markdown('<h1 class="main-title">🐦 Mini Twitter</h1>', unsafe_allow_html=True)
 
-menu = ["Register", "Login", "Feed", "Post Tweet", "Logout"]
+menu = ["Register", "Login", "Feed", "Post Tweet", "Follow / Unfollow", "Logout"]
 choice = st.sidebar.selectbox("Menu", menu)
 
+# FOLLOW UI (NEW)
+if choice == "Follow / Unfollow":
+    if not st.session_state.user_id:
+        st.warning("Login first")
+    else:
+        target = st.text_input("Username to follow/unfollow")
+        col1, col2 = st.columns(2)
+        if col1.button("Follow"):
+            st.success(follow_user(st.session_state.user_id, target))
+        if col2.button("Unfollow"):
+            st.success(unfollow_user(st.session_state.user_id, target))
+
 # REGISTER
-if choice == "Register":
-    st.subheader("Create Account")
+elif choice == "Register":
     email = st.text_input("Email")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
