@@ -253,7 +253,7 @@ if "choice" not in st.session_state:
 # -------------------------
 # HEADER + NAV
 # -------------------------
-st.markdown('<h1 class="main-title">🐦 Mini Twitter</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">Y</h1>', unsafe_allow_html=True)
 
 menu = ["Feed", "Post Tweet", "Follow / Unfollow", "Register", "Login", "Logout"]
 
